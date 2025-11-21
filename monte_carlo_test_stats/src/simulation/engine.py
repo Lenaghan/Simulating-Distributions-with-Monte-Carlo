@@ -69,11 +69,16 @@ class MonteCarloEngine:
         self._setup_logging()
         self._setup_reproducibility()
         
+        # Import real statistics
+        from src.statistics.kolmogorov_smirnov import kolmogorov_smirnov_statistic
+        from src.statistics.durbin_watson import durbin_watson_statistic
+        from src.statistics.anderson_darling import anderson_darling_statistic
+        
         # Available test statistics mapping
         self.test_statistics = {
-            'kolmogorov_smirnov': self._ks_statistic_placeholder,
-            'durbin_watson': self._dw_statistic_placeholder,
-            'anderson_darling': self._ad_statistic_placeholder
+            'kolmogorov_smirnov': kolmogorov_smirnov_statistic,
+            'durbin_watson': durbin_watson_statistic,
+            'anderson_darling': anderson_darling_statistic
         }
     
     def _load_config(self, config_dir: Path) -> Dict[str, Any]:
@@ -222,19 +227,3 @@ class MonteCarloEngine:
         results = np.concatenate([np.array(chunk) for chunk in results_chunks])
         
         return results
-    
-    # Placeholder statistic functions (will be replaced by actual implementations)
-    def _ks_statistic_placeholder(self, sample):
-        """Placeholder for Kolmogorov-Smirnov statistic."""
-        # Simple placeholder that returns values in [0, 1]
-        return np.random.uniform(0.05, 0.3)
-    
-    def _dw_statistic_placeholder(self, sample):
-        """Placeholder for Durbin-Watson statistic."""
-        # Simple placeholder that returns values in [0, 4]
-        return np.random.uniform(1.5, 2.5)
-    
-    def _ad_statistic_placeholder(self, sample):
-        """Placeholder for Anderson-Darling statistic."""
-        # Simple placeholder that returns positive values
-        return np.random.uniform(0.5, 2.0)
