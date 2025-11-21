@@ -465,7 +465,7 @@ class SimulationOrchestrator:
                     'metadata': metadata
                 })
                 
-                logger.info(f"✓ Completed: {statistic} n={sample_size}")
+                logger.info(f"[OK] Completed: {statistic} n={sample_size}")
                 
             except Exception as e:
                 logger.error(f"✗ Failed: {statistic} n={sample_size} - {str(e)}")
