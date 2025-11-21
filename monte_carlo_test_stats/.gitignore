@@ -1,28 +1,28 @@
-   # Python
-   __pycache__/
-   *.py[cod]
-   *$py.class
-   *.so
-   .Python
-   env/
-   venv/
-   .venv
-   *.egg-info/
-   
-   # Data files
-   data/raw/*
-   data/interim/*
-   data/processed/*
-   !data/*/.gitkeep
-   
-   # IDE
-   .vscode/
-   .idea/
-   *.swp
-   
-   # OS
-   .DS_Store
-   Thumbs.db
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+*.egg-info/
+
+# Data files
+data/raw/*
+data/interim/*
+data/processed/*
+!data/*/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
 
 __pycache__/
 *.h5
