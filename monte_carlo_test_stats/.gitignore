@@ -1,29 +1,47 @@
-# Python
+# ------------------------------------------------------------------
+# 1. Python Artifacts
+# ------------------------------------------------------------------
+
+# Bytecode, compiled files, and metadata
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyc
 *.so
 .Python
+
+# Environment files
 env/
 venv/
 .venv
+
+# Package metadata/build artifacts
 *.egg-info/
+*$py.class
 
-# Data files
-data/raw/*
-data/interim/*
-data/processed/*
-!data/*/.gitkeep
+# Log files and database/large data files
+*.h5
+*.log
 
-# IDE
+# ------------------------------------------------------------------
+# 2. Data Files (Ignoring all contents, but preserving .gitkeep)
+# ------------------------------------------------------------------
+
+data/raw/
+data/interim/
+data/processed/
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# ------------------------------------------------------------------
+# 3. IDE and System Files
+# ------------------------------------------------------------------
+
+# Common IDE configuration files
 .vscode/
 .idea/
 *.swp
 
-# OS
+# Operating System files
 .DS_Store
 Thumbs.db
-
-__pycache__/
-*.h5
-*.pyc
