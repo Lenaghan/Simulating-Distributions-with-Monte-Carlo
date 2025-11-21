@@ -21,7 +21,7 @@ class TestProductionSimulations:
         Test: Generate correct parameter grid for production runs
         Expected: 15 configurations (3 statistics × 5 sample sizes)
         """
-        from scripts.run_full_simulations import generate_parameter_grid
+        from run_full_simulations import generate_parameter_grid
         
         grid = generate_parameter_grid()
         
@@ -48,7 +48,7 @@ class TestProductionSimulations:
         Test: Dynamic iteration adjustment based on convergence
         Expected: Iterations increase when not converged, cap at maximum
         """
-        from scripts.run_full_simulations import AdaptiveSimulator
+        from run_full_simulations import AdaptiveSimulator
         
         simulator = AdaptiveSimulator(
             initial_iterations=1_000_000,
@@ -88,7 +88,7 @@ class TestProductionSimulations:
         Test: Resume from checkpoint after interruption
         Expected: Load previous state and continue from last iteration
         """
-        from scripts.run_full_simulations import SimulationRunner
+        from run_full_simulations import SimulationRunner
         
         with tempfile.TemporaryDirectory() as temp_dir:
             runner = SimulationRunner(checkpoint_dir=temp_dir)
@@ -131,7 +131,7 @@ class TestProductionSimulations:
         Test: Verify HDF5 storage format and metadata
         Expected: Proper structure with compression and metadata
         """
-        from scripts.run_full_simulations import save_production_results
+        from run_full_simulations import save_production_results
         
         with tempfile.TemporaryDirectory() as temp_dir:
             # Mock simulation results
@@ -175,7 +175,7 @@ class TestProductionSimulations:
         Test: Verify prioritization of smaller sample sizes
         Expected: n=30, 50 processed before n=500, 1000
         """
-        from scripts.run_full_simulations import prioritize_configurations
+        from run_full_simulations import prioritize_configurations
         
         configs = [
             {'statistic': 'ks', 'sample_size': 1000},
@@ -196,7 +196,7 @@ class TestProductionSimulations:
         Test: Integration with convergence monitoring system
         Expected: Correct convergence checks at intervals
         """
-        from scripts.run_full_simulations import ProductionSimulator
+        from run_full_simulations import ProductionSimulator
         
         with patch('src.simulation.convergence.check_convergence') as mock_check:
             mock_check.return_value = {0.95: True, 0.99: False}
@@ -222,7 +222,7 @@ class TestProductionSimulations:
         Test: Verify parallel processing configuration
         Expected: Uses all CPU cores, proper batch sizing
         """
-        from scripts.run_full_simulations import get_parallel_config
+        from run_full_simulations import get_parallel_config
         
         config = get_parallel_config()
         
@@ -236,7 +236,7 @@ class TestProductionSimulations:
         Test: Complete metadata generation for each simulation
         Expected: All required fields present and correct
         """
-        from scripts.run_full_simulations import generate_simulation_metadata
+        from run_full_simulations import generate_simulation_metadata
         
         metadata = generate_simulation_metadata(
             statistic='kolmogorov_smirnov',
@@ -262,7 +262,7 @@ class TestProductionSimulations:
         Test: Graceful handling of simulation errors
         Expected: Log error, save partial results, continue with next config
         """
-        from scripts.run_full_simulations import SimulationOrchestrator
+        from run_full_simulations import SimulationOrchestrator
         
         orchestrator = SimulationOrchestrator()
         

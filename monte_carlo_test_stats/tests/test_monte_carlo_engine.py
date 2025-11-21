@@ -9,7 +9,7 @@ import yaml
 from pathlib import Path
 import tempfile
 import shutil
-
+from src.simulation.engine import MonteCarloEngine
 
 class TestMonteCarloEngine:
     """Test suite for MonteCarloEngine class"""
@@ -45,12 +45,11 @@ class TestMonteCarloEngine:
         - Attributes set from config
         - Logger initialized
         """
-        # from src.simulation.engine import MonteCarloEngine
-        # engine = MonteCarloEngine(config_dir=temp_config_dir)
-        # assert engine.config is not None
-        # assert engine.random_seed == 42
-        # assert engine.n_jobs == 1
-        pass
+        from src.simulation.engine import MonteCarloEngine
+        engine = MonteCarloEngine(config_dir=temp_config_dir)
+        assert engine.config is not None
+        assert engine.random_seed == 42
+        assert engine.n_jobs == 1
     
     def test_reproducibility_single_thread(self):
         """
@@ -59,14 +58,13 @@ class TestMonteCarloEngine:
         - Two runs with seed=42 produce exactly same array
         - Different seeds produce different results
         """
-        # engine1 = MonteCarloEngine(seed=42)
-        # result1 = engine1.simulate('kolmogorov_smirnov', n=30, iterations=100)
-        # 
-        # engine2 = MonteCarloEngine(seed=42)
-        # result2 = engine2.simulate('kolmogorov_smirnov', n=30, iterations=100)
-        # 
-        # assert np.array_equal(result1, result2)
-        pass
+        engine1 = MonteCarloEngine(seed=42)
+        result1 = engine1.simulate('kolmogorov_smirnov', n=30, iterations=100)
+        
+        engine2 = MonteCarloEngine(seed=42)
+        result2 = engine2.simulate('kolmogorov_smirnov', n=30, iterations=100)
+        
+        assert np.array_equal(result1, result2)
     
     def test_parallel_reproducibility(self):
         """
@@ -75,15 +73,14 @@ class TestMonteCarloEngine:
         - Results with n_jobs=1 statistically equivalent to n_jobs=4
         - Mean and quantiles match within tolerance (1e-3)
         """
-        # engine_single = MonteCarloEngine(seed=42, n_jobs=1)
-        # result_single = engine_single.simulate('kolmogorov_smirnov', n=30, iterations=10000)
-        # 
-        # engine_parallel = MonteCarloEngine(seed=42, n_jobs=4)
-        # result_parallel = engine_parallel.simulate('kolmogorov_smirnov', n=30, iterations=10000)
-        # 
-        # assert np.abs(result_single.mean() - result_parallel.mean()) < 1e-3
-        # assert np.abs(np.quantile(result_single, 0.95) - np.quantile(result_parallel, 0.95)) < 1e-3
-        pass
+        engine_single = MonteCarloEngine(seed=42, n_jobs=1)
+        result_single = engine_single.simulate('kolmogorov_smirnov', n=30, iterations=10000)
+        
+        engine_parallel = MonteCarloEngine(seed=42, n_jobs=4)
+        result_parallel = engine_parallel.simulate('kolmogorov_smirnov', n=30, iterations=10000)
+        
+        assert np.abs(result_single.mean() - result_parallel.mean()) < 1e-3
+        assert np.abs(np.quantile(result_single, 0.95) - np.quantile(result_parallel, 0.95)) < 1e-3
     
     def test_simulate_basic_functionality(self):
         """
@@ -93,36 +90,33 @@ class TestMonteCarloEngine:
         - All values finite (no NaN or inf)
         - Values in reasonable range for test statistic
         """
-        # engine = MonteCarloEngine(seed=42)
-        # result = engine.simulate('kolmogorov_smirnov', n=50, iterations=1000)
-        # 
-        # assert isinstance(result, np.ndarray)
-        # assert len(result) == 1000
-        # assert np.all(np.isfinite(result))
-        # assert np.all(result >= 0)  # KS statistic is non-negative
-        # assert np.all(result <= 1)  # KS statistic bounded by 1
-        pass
+        engine = MonteCarloEngine(seed=42)
+        result = engine.simulate('kolmogorov_smirnov', n=50, iterations=1000)
+        
+        assert isinstance(result, np.ndarray)
+        assert len(result) == 1000
+        assert np.all(np.isfinite(result))
+        assert np.all(result >= 0)  # KS statistic is non-negative
+        assert np.all(result <= 1)  # KS statistic bounded by 1
     
     def test_invalid_test_statistic(self):
         """
         Test: Engine handles invalid test statistic name
         Expected: Raises ValueError with helpful message
         """
-        # engine = MonteCarloEngine()
-        # with pytest.raises(ValueError, match="Unsupported test statistic"):
-        #     engine.simulate('invalid_test', n=30, iterations=100)
-        pass
+        engine = MonteCarloEngine()
+        with pytest.raises(ValueError, match="Unsupported test statistic"):
+            engine.simulate('invalid_test', n=30, iterations=100)
     
     def test_progress_tracking(self, capsys):
         """
         Test: Progress tracking outputs to console
         Expected: tqdm progress bar appears in output
         """
-        # engine = MonteCarloEngine(verbose=True)
-        # engine.simulate('kolmogorov_smirnov', n=30, iterations=100)
-        # captured = capsys.readouterr()
-        # assert '100%' in captured.out or '100it' in captured.out
-        pass
+        engine = MonteCarloEngine(verbose=True)
+        engine.simulate('kolmogorov_smirnov', n=30, iterations=100)
+        captured = capsys.readouterr()
+        assert '100%' in captured.out or '100it' in captured.out
     
     def test_memory_efficiency(self):
         """
@@ -131,13 +125,12 @@ class TestMonteCarloEngine:
         - Completes without memory error
         - Results array size as expected
         """
-        # engine = MonteCarloEngine(chunk_size=10000)
-        # result = engine.simulate('kolmogorov_smirnov', n=100, iterations=100000)
-        # 
-        # assert len(result) == 100000
-        # memory_usage_mb = result.nbytes / (1024 * 1024)
-        # assert memory_usage_mb < 100  # Should be ~0.8 MB for 100k float64s
-        pass
+        engine = MonteCarloEngine(chunk_size=10000)
+        result = engine.simulate('kolmogorov_smirnov', n=100, iterations=100000)
+        
+        assert len(result) == 100000
+        memory_usage_mb = result.nbytes / (1024 * 1024)
+        assert memory_usage_mb < 100  # Should be ~0.8 MB for 100k float64s
     
     def test_rng_stream_independence(self):
         """
@@ -146,19 +139,17 @@ class TestMonteCarloEngine:
         - Different workers produce different sequences
         - No correlation between streams
         """
-        # engine = MonteCarloEngine(n_jobs=4)
-        # # This will be tested via ParallelRNGManager
-        pass
+        engine = MonteCarloEngine(n_jobs=4)
+        # This will be tested via ParallelRNGManager
     
     def test_config_validation(self):
         """
         Test: Invalid configuration raises appropriate errors
         Expected: Clear error messages for missing/invalid config values
         """
-        # bad_config = {'iterations': -1000}  # Negative iterations
-        # with pytest.raises(ValueError, match="iterations must be positive"):
-        #     engine = MonteCarloEngine(config=bad_config)
-        pass
+        bad_config = {'iterations': -1000}  # Negative iterations
+        with pytest.raises(ValueError, match="iterations must be positive"):
+            engine = MonteCarloEngine(config=bad_config)
 
 
 # Test specifications for validation
