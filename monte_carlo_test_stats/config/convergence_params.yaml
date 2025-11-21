@@ -1,0 +1,11 @@
+   # Convergence Monitoring Parameters
+   quantile_stability: 0.0001  # Maximum change between batches
+   batch_size: 100000          # Iterations per convergence check
+   min_batches: 10             # Minimum batches before checking convergence
+   confidence_level: 0.99      # For convergence confidence intervals
+   
+   # Checkpoint settings
+   checkpoint_interval: 100000  # Save checkpoint every 100K iterations
+   max_checkpoints: 3          # Keep last 3 checkpoints
+   checkpoint_format: hdf5     # Storage format
+   compression: snappy         # Compression type
