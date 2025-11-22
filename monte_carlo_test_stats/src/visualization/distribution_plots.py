@@ -17,7 +17,10 @@ sns.set_palette("colorblind")
 
 def get_accessible_colors(n_colors: int = 5) -> List[str]:
     """Get colorblind-friendly color palette."""
-    return sns.color_palette("colorblind", n_colors).as_hex()
+    palette = sns.color_palette("colorblind", n_colors)
+    # Convert to hex strings
+    return ['#%02x%02x%02x' % tuple(int(c*255) for c in color[:3]) for color in palette]
+
 
 
 def plot_distribution(
@@ -125,8 +128,25 @@ def plot_qq(
     """
     fig, ax = plt.subplots(figsize=figsize)
     
-    # Q-Q plot
-    stats.probplot(data, dist=distribution, plot=ax)
+    # Q-Q plot - manually create to ensure scatter points exist
+    sorted_data = np.sort(data)
+    n = len(sorted_data)
+    
+    # Calculate theoretical quantiles
+    positions = (np.arange(1, n+1) - 0.5) / n
+    if distribution == 'norm':
+        theoretical_quantiles = stats.norm.ppf(positions)
+    else:
+        theoretical_quantiles = getattr(stats, distribution).ppf(positions)
+    
+    # Create scatter plot
+    ax.scatter(theoretical_quantiles, sorted_data, alpha=0.6, s=10)
+    
+    # Add reference line
+    min_val = min(theoretical_quantiles.min(), sorted_data.min())
+    max_val = max(theoretical_quantiles.max(), sorted_data.max())
+    ax.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2)
+    
     
     # Customize
     ax.set_xlabel('Theoretical Quantiles')
@@ -379,10 +399,13 @@ def save_publication_figure(
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
     
-    fig.savefig(
-        filepath,
-        dpi=dpi,
-        bbox_inches=bbox_inches,
-        **kwargs
-    )
-    plt.close(fig)
+    try:
+        fig.savefig(
+            filepath,
+            dpi=dpi,
+            bbox_inches=bbox_inches,
+            **kwargs
+        )
+    finally:
+        # Ensure figure is closed to release file handle
+        plt.close(fig)
