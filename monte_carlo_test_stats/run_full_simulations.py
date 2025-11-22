@@ -524,10 +524,10 @@ def main():
     logger.info(f"Summary saved to {summary_path}")
     
     if failed == 0:
-        logger.info("✓ All simulations completed successfully!")
+        logger.info("[OK] All simulations completed successfully!")
         return 0
     else:
-        logger.warning(f"⚠ {failed} simulations failed")
+        logger.warning(f"[FAIL] {failed} simulations failed")
         return 1
 
 
