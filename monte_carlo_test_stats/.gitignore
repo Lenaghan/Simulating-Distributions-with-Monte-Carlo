@@ -45,3 +45,11 @@ data/processed/
 # Operating System files
 .DS_Store
 Thumbs.db
+
+# ------------------------------------------------------------------
+# 4. Generated Artifacts (Graphs, Reports)
+# ------------------------------------------------------------------
+
+# Ignore all contents of these dedicated reports directories
+reports/figures/ .gitkeep
+reports/quantile_tables/ .gitkeep
