@@ -55,3 +55,6 @@ reports/figures/*
 !reports/figures/.gitkeep
 reports/quantile_tables/*
 !reports/quantile_tables/.gitkeep
+
+# Ignore generated summary output files
+production_summary.json
