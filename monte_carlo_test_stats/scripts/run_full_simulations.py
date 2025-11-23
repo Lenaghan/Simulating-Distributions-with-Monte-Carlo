@@ -2,6 +2,8 @@
 Production Monte Carlo Simulation Orchestration Script
 Executes full-scale simulations for all test statistics and sample sizes
 with convergence monitoring, checkpointing, and adaptive iteration control.
+
+Now loads configuration from YAML files for better flexibility.
 """
 import numpy as np
 import pandas as pd
@@ -35,15 +37,104 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def generate_parameter_grid() -> List[Dict[str, Any]]:
-    """
-    Generate parameter grid for all production simulations.
+class ConfigLoader:
+    """Loads and manages configuration from YAML files."""
     
-    Returns:
-        List of configuration dictionaries (15 total)
+    def __init__(self, config_dir: str = "config"):
+        """
+        Initialize configuration loader.
+        
+        Args:
+            config_dir: Directory containing configuration files
+        """
+        self.config_dir = Path(config_dir)
+        self.simulation_config = {}
+        self.convergence_config = {}
+        
+    def load_configs(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """
+        Load both configuration files.
+        
+        Returns:
+            Tuple of (simulation_config, convergence_config)
+        """
+        # Load simulation configuration
+        sim_config_path = self.config_dir / "simulation_config.yaml"
+        if sim_config_path.exists():
+            with open(sim_config_path, 'r') as f:
+                self.simulation_config = yaml.safe_load(f)
+            logger.info(f"Loaded simulation config from {sim_config_path}")
+        else:
+            logger.warning(f"Simulation config not found at {sim_config_path}, using defaults")
+            self.simulation_config = self._get_default_simulation_config()
+        
+        # Load convergence configuration
+        conv_config_path = self.config_dir / "convergence_params.yaml"
+        if conv_config_path.exists():
+            with open(conv_config_path, 'r') as f:
+                self.convergence_config = yaml.safe_load(f)
+            logger.info(f"Loaded convergence config from {conv_config_path}")
+        else:
+            logger.warning(f"Convergence config not found at {conv_config_path}, using defaults")
+            self.convergence_config = self._get_default_convergence_config()
+        
+        return self.simulation_config, self.convergence_config
+    
+    def _get_default_simulation_config(self) -> Dict[str, Any]:
+        """Return default simulation configuration."""
+        return {
+            'test_statistics': ['kolmogorov_smirnov', 'durbin_watson', 'anderson_darling'],
+            'sample_sizes': [30, 50, 100, 500, 1000],
+            'iterations': {
+                'initial': 1_000_000,
+                'convergence_check': 5_000_000,
+                'maximum': 10_000_000
+            },
+            'quantiles': [0.75, 0.90, 0.95, 0.99],
+            'null_distribution': 'standard_normal',
+            'random_seed': 42,
+            'parallel': {
+                'n_jobs': -1,
+                'backend': 'loky',
+                'batch_size': 10_000,
+                'max_nbytes': '1M',
+                'verbose': 10
+            },
+            'memory': {
+                'chunk_size': 100_000,
+                'enable_compression': True
+            }
+        }
+    
+    def _get_default_convergence_config(self) -> Dict[str, Any]:
+        """Return default convergence configuration."""
+        return {
+            'quantile_stability': 0.0001,
+            'batch_size': 100_000,
+            'min_batches': 10,
+            'confidence_level': 0.99,
+            'checkpoint_interval': 100_000,
+            'max_checkpoints': 50,
+            'checkpoint_format': 'hdf5',
+            'compression': 'snappy'
+        }
+
+
+def generate_parameter_grid(sim_config: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    statistics = ['kolmogorov_smirnov', 'durbin_watson', 'anderson_darling']
-    sample_sizes = [30, 50, 100, 500, 1000]
+    Generate parameter grid from configuration.
+    
+    Args:
+        sim_config: Simulation configuration dictionary
+        
+    Returns:
+        List of configuration dictionaries
+    """
+    statistics = sim_config['test_statistics']
+    sample_sizes = sim_config['sample_sizes']
+    iterations_config = sim_config['iterations']
+    quantiles = sim_config['quantiles']
+    seed = sim_config['random_seed']
     
     grid = []
     for statistic in statistics:
@@ -51,10 +142,10 @@ def generate_parameter_grid() -> List[Dict[str, Any]]:
             config = {
                 'statistic': statistic,
                 'sample_size': sample_size,
-                'iterations': 10_000_000,  # Default 10M
-                'quantiles': [0.75, 0.90, 0.95, 0.99],
-                'convergence_threshold': 0.0001,
-                'seed': 42
+                'iterations': iterations_config['maximum'],
+                'quantiles': quantiles,
+                'convergence_threshold': None,  # Will be set from convergence config
+                'seed': seed
             }
             grid.append(config)
     
@@ -75,13 +166,22 @@ def prioritize_configurations(configs: List[Dict]) -> List[Dict]:
     return sorted(configs, key=lambda x: x['sample_size'])
 
 
-def get_parallel_config() -> Dict[str, Any]:
-    """Get parallel processing configuration."""
+def get_parallel_config(sim_config: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Get parallel processing configuration.
+    
+    Args:
+        sim_config: Simulation configuration dictionary
+        
+    Returns:
+        Parallel processing configuration
+    """
+    parallel = sim_config.get('parallel', {})
     return {
-        'n_jobs': -1,  # Use all CPU cores
-        'backend': 'loky',
-        'batch_size': 10_000,
-        'verbose': 10
+        'n_jobs': parallel.get('n_jobs', -1),
+        'backend': parallel.get('backend', 'loky'),
+        'batch_size': parallel.get('batch_size', 10_000),
+        'verbose': parallel.get('verbose', 10)
     }
 
 
@@ -90,15 +190,21 @@ class AdaptiveSimulator:
     
     def __init__(
         self,
-        initial_iterations: int = 1_000_000,
-        convergence_threshold: float = 0.0001,
-        max_iterations: int = 20_000_000,
-        check_interval: int = 100_000
+        sim_config: Dict[str, Any],
+        conv_config: Dict[str, Any]
     ):
-        self.initial_iterations = initial_iterations
-        self.convergence_threshold = convergence_threshold
-        self.max_iterations = max_iterations
-        self.check_interval = check_interval
+        """
+        Initialize adaptive simulator with configuration.
+        
+        Args:
+            sim_config: Simulation configuration
+            conv_config: Convergence configuration
+        """
+        iterations = sim_config['iterations']
+        self.initial_iterations = iterations['initial']
+        self.convergence_threshold = conv_config['quantile_stability']
+        self.max_iterations = iterations['maximum']
+        self.check_interval = conv_config['checkpoint_interval']
     
     def determine_next_iterations(
         self,
@@ -146,12 +252,34 @@ class AdaptiveSimulator:
 class SimulationRunner:
     """Handles individual simulation execution with checkpointing."""
     
-    def __init__(self, checkpoint_dir: str = "data/interim"):
+    def __init__(
+        self,
+        sim_config: Dict[str, Any],
+        conv_config: Dict[str, Any],
+        checkpoint_dir: str = "data/interim"
+    ):
+        """
+        Initialize simulation runner with configuration.
+        
+        Args:
+            sim_config: Simulation configuration
+            conv_config: Convergence configuration
+            checkpoint_dir: Directory for checkpoints
+        """
         self.checkpoint_dir = Path(checkpoint_dir)
+        
+        # Get compression from convergence config
+        compression = conv_config.get('compression', 'gzip')
+        # Map snappy to gzip if not available in h5py
+        if compression == 'snappy':
+            compression = 'gzip'
+            logger.info("Snappy compression not available in h5py, using gzip")
+        
         self.checkpoint_manager = CheckpointManager(
             checkpoint_dir=checkpoint_dir,
-            max_checkpoints=3,
-            compression='gzip'
+            max_checkpoints=conv_config.get('max_checkpoints', 50),
+            compression=compression,
+            quantile_levels=sim_config.get('quantiles', [0.75, 0.90, 0.95, 0.99])
         )
     
     def save_checkpoint(
@@ -180,7 +308,10 @@ class SimulationRunner:
         if checkpoints:
             latest = checkpoints[-1]
             logger.info(f"Recovering from checkpoint: {latest}")
-            return self.checkpoint_manager.load_checkpoint(str(latest))
+            # Updated to handle 3-value return from new checkpoint system
+            data, metadata, quantiles = self.checkpoint_manager.load_checkpoint(str(latest))
+            # Return only data and metadata for backward compatibility
+            return data, metadata
         
         return None, None
     
@@ -199,7 +330,8 @@ class SimulationRunner:
         Returns:
             Combined results array
         """
-        data, metadata = self.checkpoint_manager.load_checkpoint(checkpoint_path)
+        # Updated to handle 3-value return from new checkpoint system
+        data, metadata, quantiles = self.checkpoint_manager.load_checkpoint(checkpoint_path)
         completed = metadata['iterations_completed']
         
         if completed >= target_iterations:
@@ -210,51 +342,72 @@ class SimulationRunner:
         logger.info(f"Running {remaining} additional iterations")
         
         # Create engine with same configuration
-        engine = MonteCarloEngine(seed=metadata.get('seed', 42))
-        
-        # Generate new results starting from where we left off
-        new_results = engine.simulate(
-            test_statistic=metadata['statistic'],
-            n=metadata['sample_size'],
-            iterations=remaining,
-            show_progress=True
+        engine = MonteCarloEngine(
+            sample_size=metadata['sample_size'],
+            random_seed=metadata['seed']
         )
         
-        # Combine with existing
-        combined = np.concatenate([data, new_results])
+        # Continue from last iteration
+        engine.current_iteration = completed
+        additional = engine.generate_samples(
+            statistic=metadata['statistic'],
+            n_iterations=remaining
+        )
         
-        return combined
+        # Combine results
+        return np.concatenate([data, additional])
 
 
-class ProductionSimulator:
-    """Main production simulation orchestrator."""
+class SimulationOrchestrator:
+    """Orchestrates full simulation workflow."""
     
     def __init__(
         self,
-        check_interval: int = 100_000,
-        convergence_threshold: float = 0.0001
+        sim_config: Dict[str, Any],
+        conv_config: Dict[str, Any],
+        checkpoint_dir: str = "data/interim",
+        output_dir: str = "data/processed"
     ):
-        self.check_interval = check_interval
-        self.convergence_threshold = convergence_threshold
-        self.engine = MonteCarloEngine(seed=42, n_jobs=-1)
-        self.adaptive_sim = AdaptiveSimulator(
-            convergence_threshold=convergence_threshold
-        )
-        self.runner = SimulationRunner()
+        """
+        Initialize orchestrator with configuration.
+        
+        Args:
+            sim_config: Simulation configuration
+            conv_config: Convergence configuration
+            checkpoint_dir: Directory for checkpoints
+            output_dir: Directory for final results
+        """
+        self.sim_config = sim_config
+        self.conv_config = conv_config
+        self.simulator = AdaptiveSimulator(sim_config, conv_config)
+        self.runner = SimulationRunner(sim_config, conv_config, checkpoint_dir)
+        self.parallel_config = get_parallel_config(sim_config)
+        
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
     
     def run_with_monitoring(
         self,
         statistic: str,
         sample_size: int,
-        max_iterations: int = 10_000_000,
-        quantiles: List[float] = [0.75, 0.90, 0.95, 0.99]
+        max_iterations: int,
+        quantiles: List[float] = None
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Run simulation with convergence monitoring.
         
+        Args:
+            statistic: Test statistic name
+            sample_size: Sample size
+            max_iterations: Maximum iterations
+            quantiles: Quantile levels to monitor
+            
         Returns:
             (results array, metadata dict)
         """
+        if quantiles is None:
+            quantiles = self.sim_config.get('quantiles', [0.75, 0.90, 0.95, 0.99])
+            
         start_time = time.time()
         
         # Check for existing checkpoint
@@ -271,176 +424,159 @@ class ProductionSimulator:
         # Initialize convergence monitor
         monitor = ConvergenceMonitor(
             quantiles=quantiles,
-            threshold=self.convergence_threshold,
-            batch_size=self.check_interval
+            threshold=self.conv_config['quantile_stability'],
+            batch_size=self.conv_config['checkpoint_interval']  # Use checkpoint_interval as batch size
         )
         
-        all_results = existing_data if existing_data is not None else np.array([])
-        iterations_completed = len(all_results)
+        # Start with initial iterations or continue from checkpoint
+        if existing_data is not None:
+            all_results = existing_data
+            iterations_completed = len(existing_data)
+            # Add existing data to monitor in batches
+            for i in range(0, iterations_completed, self.conv_config['checkpoint_interval']):
+                batch = existing_data[i:i+self.conv_config['checkpoint_interval']]
+                monitor.add_batch(batch)
+        else:
+            # Run initial batch
+            logger.info(f"Starting fresh simulation with {self.simulator.initial_iterations} iterations")
+            engine = MonteCarloEngine(
+                sample_size=sample_size,
+                random_seed=self.sim_config['random_seed']
+            )
+            all_results = engine.generate_samples(
+                statistic=statistic,
+                n_iterations=self.simulator.initial_iterations
+            )
+            iterations_completed = self.simulator.initial_iterations
+            # Add to monitor
+            monitor.add_batch(all_results)
+        
+        # Monitor convergence
         converged = False
         
         while iterations_completed < max_iterations and not converged:
-            # Determine batch size
-            batch_size = min(self.check_interval, max_iterations - iterations_completed)
-            
-            logger.info(
-                f"{statistic} n={sample_size}: "
-                f"Running batch of {batch_size} iterations "
-                f"(total: {iterations_completed + batch_size}/{max_iterations})"
-            )
-            
-            # Run batch
-            batch_results = self.engine.simulate(
-                test_statistic=statistic,
-                n=sample_size,
-                iterations=batch_size,
-                show_progress=True
-            )
-            
-            # Add to monitor
-            monitor.add_batch(batch_results)
-            
-            # Combine results
-            if len(all_results) == 0:
-                all_results = batch_results
-            else:
-                all_results = np.concatenate([all_results, batch_results])
-            
-            iterations_completed = len(all_results)
-            
-            # Check convergence
-            if iterations_completed >= self.adaptive_sim.initial_iterations:
+            # Check convergence (only after initial iterations)
+            if iterations_completed >= self.simulator.initial_iterations:
                 converged = monitor.is_converged()
                 
                 if converged:
-                    logger.info(
-                        f"Convergence achieved after {iterations_completed} iterations"
-                    )
+                    logger.info(f"  Convergence achieved at {iterations_completed} iterations")
                     break
             
-            # Save checkpoint every 500k iterations
-            if iterations_completed % 500_000 == 0:
-                checkpoint_meta = {
+            # Determine next batch size
+            # Create convergence status for adaptive simulator
+            convergence_status = {}
+            if hasattr(monitor, 'quantile_converged'):
+                convergence_status = monitor.quantile_converged
+            else:
+                # Fallback: assume not converged for all quantiles
+                for q in quantiles:
+                    convergence_status[q] = False
+            
+            next_iterations = self.simulator.determine_next_iterations(
+                iterations_completed, convergence_status
+            )
+            
+            if next_iterations == iterations_completed:
+                logger.info("No iteration increase needed")
+                break
+            
+            # Run additional iterations
+            additional = next_iterations - iterations_completed
+            logger.info(f"Running {additional} more iterations (total: {next_iterations})")
+            
+            engine = MonteCarloEngine(
+                sample_size=sample_size,
+                random_seed=self.sim_config['random_seed']
+            )
+            engine.current_iteration = iterations_completed
+            
+            batch_results = engine.generate_samples(
+                statistic=statistic,
+                n_iterations=additional
+            )
+            
+            # Add batch to monitor
+            monitor.add_batch(batch_results)
+            
+            # Combine results
+            all_results = np.concatenate([all_results, batch_results])
+            iterations_completed = next_iterations
+            
+            # Save checkpoint every checkpoint_interval iterations
+            if iterations_completed % self.conv_config['checkpoint_interval'] == 0:
+                metadata = {
                     'statistic': statistic,
                     'sample_size': sample_size,
                     'iterations_completed': iterations_completed,
                     'convergence_achieved': converged,
-                    'last_quantiles': monitor.get_current_estimates(),
-                    'seed': 42
+                    'seed': self.sim_config['random_seed'],
+                    'timestamp': datetime.now().isoformat()
                 }
-                self.runner.save_checkpoint(all_results, checkpoint_meta)
+                checkpoint_path = self.runner.save_checkpoint(all_results, metadata)
+                logger.info(f"Checkpoint saved: {checkpoint_path}")
         
-        # Calculate final quantiles
-        final_quantiles = {}
-        for q in quantiles:
-            final_quantiles[q] = float(np.quantile(all_results, q))
-        
-        # Prepare metadata
+        # Final metadata
         metadata = {
             'statistic': statistic,
             'sample_size': sample_size,
             'iterations_completed': iterations_completed,
             'convergence_achieved': converged,
-            'quantiles': final_quantiles,
-            'runtime_seconds': time.time() - start_time,
-            'timestamp': datetime.now().isoformat(),
-            'seed_used': 42
+            'execution_time': time.time() - start_time,
+            'seed': self.sim_config['random_seed'],
+            'timestamp': datetime.now().isoformat()
         }
         
-        return all_results, metadata
-
-
-def save_production_results(
-    filepath: Path,
-    results: np.ndarray,
-    metadata: Dict[str, Any]
-):
-    """
-    Save results to HDF5 with compression and metadata.
-    
-    Args:
-        filepath: Output file path
-        results: Simulation results array
-        metadata: Simulation metadata dictionary
-    """
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    
-    with h5py.File(filepath, 'w') as f:
-        # Save results with compression
-        f.create_dataset(
-            'results',
-            data=results,
-            compression='gzip',
-            compression_opts=4
-        )
+        # Save final checkpoint
+        checkpoint_path = self.runner.save_checkpoint(all_results, metadata)
         
-        # Save metadata as attributes
-        for key, value in metadata.items():
-            if isinstance(value, dict):
-                # Convert dict to JSON string
-                f.attrs[key] = json.dumps(value)
-            else:
-                f.attrs[key] = value
+        return all_results, metadata
     
-    logger.info(f"Results saved to {filepath}")
-
-
-def generate_simulation_metadata(
-    statistic: str,
-    sample_size: int,
-    iterations: int,
-    converged: bool,
-    runtime: float,
-    quantiles: Dict[float, float]
-) -> Dict[str, Any]:
-    """Generate complete metadata for simulation."""
-    return {
-        'statistic': statistic,
-        'sample_size': sample_size,
-        'iterations_completed': iterations,
-        'convergence_achieved': converged,
-        'runtime_seconds': runtime,
-        'quantiles': quantiles,
-        'timestamp': datetime.now().isoformat(),
-        'seed_used': 42
-    }
-
-
-class SimulationOrchestrator:
-    """Top-level orchestrator for all simulations."""
-    
-    def __init__(self):
-        self.simulator = ProductionSimulator()
-        self.errors_logged = 0
-        self.results_dir = Path("data/processed")
-        self.results_dir.mkdir(parents=True, exist_ok=True)
+    def save_results(
+        self,
+        data: np.ndarray,
+        metadata: Dict[str, Any],
+        filename: str
+    ):
+        """Save final results to processed directory."""
+        filepath = self.output_dir / filename
+        
+        with h5py.File(filepath, 'w') as f:
+            f.create_dataset('data', data=data, compression='gzip')
+            f.attrs['metadata'] = json.dumps(metadata)
+        
+        logger.info(f"Results saved: {filepath}")
     
     def run_all_configurations(
         self,
         configs: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Run all simulation configurations.
         
+        Args:
+            configs: List of configuration dictionaries
+            
         Returns:
-            List of result summaries
+            Summary of results
         """
-        results = []
+        results = {}
         total = len(configs)
         
         for i, config in enumerate(configs, 1):
             statistic = config['statistic']
             sample_size = config['sample_size']
             
-            logger.info(f"\n{'='*60}")
-            logger.info(
-                f"Configuration {i}/{total}: {statistic}, n={sample_size}"
-            )
-            logger.info('='*60)
+            logger.info("=" * 60)
+            logger.info(f"Configuration {i}/{total}: {statistic}, n={sample_size}")
+            logger.info("=" * 60)
             
             try:
+                # Set convergence threshold from config
+                config['convergence_threshold'] = self.conv_config['quantile_stability']
+                
                 # Run simulation
-                sim_results, metadata = self.simulator.run_with_monitoring(
+                sim_results, metadata = self.run_with_monitoring(
                     statistic=statistic,
                     sample_size=sample_size,
                     max_iterations=config['iterations'],
@@ -448,88 +584,84 @@ class SimulationOrchestrator:
                 )
                 
                 # Save results
-                filename = f"{statistic}_{sample_size}_results.h5"
-                filepath = self.results_dir / filename
-                save_production_results(filepath, sim_results, metadata)
+                filename = f"{statistic}_n{sample_size}_final.h5"
+                self.save_results(sim_results, metadata, filename)
                 
-                # Save metadata separately as JSON
-                meta_filepath = self.results_dir / f"{statistic}_{sample_size}_metadata.json"
-                with open(meta_filepath, 'w') as f:
-                    json.dump(metadata, f, indent=2)
+                # Store summary
+                results[f"{statistic}_n{sample_size}"] = {
+                    'iterations': len(sim_results),
+                    'converged': metadata['convergence_achieved'],
+                    'time': metadata['execution_time']
+                }
                 
-                results.append({
-                    'statistic': statistic,
-                    'sample_size': sample_size,
-                    'status': 'completed',
-                    'filepath': str(filepath),
-                    'metadata': metadata
-                })
-                
-                logger.info(f"[OK] Completed: {statistic} n={sample_size}")
+                logger.info(f"  Completed: {statistic} n={sample_size}")
+                logger.info(f"  Iterations: {len(sim_results)}")
+                logger.info(f"  Converged: {metadata['convergence_achieved']}")
+                logger.info(f"  Time: {metadata['execution_time']:.2f}s")
                 
             except Exception as e:
-                logger.error(f"✗ Failed: {statistic} n={sample_size} - {str(e)}")
-                self.errors_logged += 1
-                
-                results.append({
-                    'statistic': statistic,
-                    'sample_size': sample_size,
-                    'status': 'failed',
+                logger.error(f"  Failed: {statistic} n={sample_size} - {str(e)}")
+                results[f"{statistic}_n{sample_size}"] = {
                     'error': str(e)
-                })
-                
-                # Continue with next configuration
-                continue
+                }
+        
+        logger.info("\n" + "=" * 60)
+        logger.info("SIMULATION COMPLETE")
+        logger.info("=" * 60)
         
         return results
 
 
 def main():
     """Main execution function."""
+    # Load configurations
+    config_loader = ConfigLoader(config_dir="config")
+    sim_config, conv_config = config_loader.load_configs()
+    
     logger.info("Starting production Monte Carlo simulations")
-    logger.info(f"Timestamp: {datetime.now()}")
+    logger.info(f"Test statistics: {sim_config['test_statistics']}")
+    logger.info(f"Sample sizes: {sim_config['sample_sizes']}")
+    logger.info(f"Max iterations: {sim_config['iterations']['maximum']}")
+    logger.info(f"Convergence threshold: {conv_config['quantile_stability']}")
     
-    # Generate parameter grid
-    configs = generate_parameter_grid()
-    
-    # Prioritize smaller sample sizes
+    # Generate and prioritize configurations
+    configs = generate_parameter_grid(sim_config)
     configs = prioritize_configurations(configs)
     
-    # Create orchestrator and run
-    orchestrator = SimulationOrchestrator()
+    # Initialize orchestrator
+    orchestrator = SimulationOrchestrator(
+        sim_config=sim_config,
+        conv_config=conv_config,
+        checkpoint_dir="data/interim",
+        output_dir="data/processed"
+    )
+    
+    # Run all simulations
     results = orchestrator.run_all_configurations(configs)
     
-    # Summary
-    completed = sum(1 for r in results if r['status'] == 'completed')
-    failed = sum(1 for r in results if r['status'] == 'failed')
-    
-    logger.info(f"\n{'='*60}")
-    logger.info("SIMULATION SUMMARY")
-    logger.info(f"Completed: {completed}/{len(configs)}")
-    logger.info(f"Failed: {failed}/{len(configs)}")
-    
-    # Save summary report
-    summary_path = Path("reports/production_summary.json")
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    
+    # Save summary
+    summary_path = Path("data/processed") / "simulation_summary.json"
     with open(summary_path, 'w') as f:
-        json.dump({
-            'timestamp': datetime.now().isoformat(),
-            'total_configurations': len(configs),
-            'completed': completed,
-            'failed': failed,
-            'results': results
-        }, f, indent=2)
+        json.dump(results, f, indent=2)
     
-    logger.info(f"Summary saved to {summary_path}")
+    logger.info(f"Summary saved: {summary_path}")
     
-    if failed == 0:
-        logger.info("[OK] All simulations completed successfully!")
-        return 0
-    else:
-        logger.warning(f"[FAIL] {failed} simulations failed")
-        return 1
+    # Print summary
+    successful = sum(1 for r in results.values() if 'error' not in r)
+    failed = len(results) - successful
+    
+    logger.info(f"\nFinal Summary:")
+    logger.info(f"  Successful: {successful}/{len(results)}")
+    logger.info(f"  Failed: {failed}/{len(results)}")
+    
+    if failed > 0:
+        logger.info("\nFailed configurations:")
+        for key, result in results.items():
+            if 'error' in result:
+                logger.info(f"  {key}: {result['error']}")
+    
+    return results
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    results = main()
