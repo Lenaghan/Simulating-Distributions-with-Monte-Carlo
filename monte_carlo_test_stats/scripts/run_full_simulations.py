@@ -10,6 +10,7 @@ import pandas as pd
 import h5py
 import json
 import yaml
+import os
 import logging
 import time
 import sys
@@ -24,13 +25,15 @@ from src.simulation.engine import MonteCarloEngine
 from src.simulation.convergence import check_convergence, ConvergenceMonitor
 from src.simulation.checkpoints import CheckpointManager
 
+# Ensure logs directory exists
+os.makedirs("logs", exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('production_simulation.log'),
+        logging.FileHandler('logs/production_simulation.log'),
         logging.StreamHandler()
     ]
 )
