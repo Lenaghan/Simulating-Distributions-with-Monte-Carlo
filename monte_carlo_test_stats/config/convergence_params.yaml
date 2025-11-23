@@ -6,6 +6,6 @@
    
    # Checkpoint settings
    checkpoint_interval: 100_000    # Save checkpoint every 100K iterations
-   max_checkpoints: 3              # Keep last 3 checkpoints
+   max_checkpoints: 50              # Keep last 50 checkpoints
    checkpoint_format: hdf5         # Storage format
    compression: snappy             # Compression type
