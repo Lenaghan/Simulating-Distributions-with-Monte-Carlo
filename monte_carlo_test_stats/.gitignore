@@ -51,7 +51,8 @@ Thumbs.db
 # ------------------------------------------------------------------
 
 # Ignore all contents of these dedicated reports directories
-reports/ .gitkeep
+reports/*
+!reports/.gitkeep
 reports/figures/*
 !reports/figures/.gitkeep
 reports/quantile_tables/*
