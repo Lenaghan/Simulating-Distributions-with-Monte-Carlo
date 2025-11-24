@@ -613,8 +613,8 @@ class ValidationReportGenerator:
             # Add interpretation
             report.append("**Interpretation:**\n")
             report.append("- Target MAE < 0.002 for all statistics\n")
-            report.append("- ✓ indicates passing validation\n")
-            report.append("- ⚠ indicates further investigation needed\n\n")
+            report.append("- [OK] indicates passing validation\n")
+            report.append("- [WARN] indicates further investigation needed\n\n")
         
         # Type I Error Validation
         report.append("## 2. Type I Error Rate Validation\n")
